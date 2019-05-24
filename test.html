@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>商户对话聊天</title>
+    <link rel="stylesheet" href="./static/css/base.css" />
+    <link rel="stylesheet" href="./static/css/index.css" />
+  </head>
+  <body>
+    <div id="chatapp" v-cloak>
+      <transition name="slide-fade">
+        <div class="chat_container" v-if="showcontainer">
+          <div class="chat_box">
+            <div class="topbar">
+              <span @click="showcontainer=false">返回</span
+              ><span>{{ nick }}</span>
+            </div>
+            <template v-for="(item, key) in clist">
+              <div :class="!item.type?'chat_left':'chat_right'" :key="key">
+                <image
+                  v-if="!item.type"
+                  :src="item.avatar"
+                  class="avatar"
+                ></image>
+                <div class="ctx">{{ item.ctx }}</div>
+                <image
+                  v-if="item.type"
+                  :src="item.avatar"
+                  class="avatar"
+                ></image>
+              </div>
+            </template>
+          </div>
+          <div class="chat_insert">
+            <input type="text" v-model="value" />
+            <span class="sendchat" @click="send">发送</span>
+          </div>
+        </div>
+      </transition>
+      <transition name="slide-fade">
+        <div class="chat_user_list" v-if="!showcontainer">
+          <div
+            v-for="(i, index) in chatlist"
+            :key="index"
+            class="chat_list"
+            @click="gotochat(i.id, i.touid, i.nick)"
+          >
+            <image :src="i.avatar" class="avatar"></image>
+            <span class="name">{{ i.nick }}</span>
+          </div>
+        </div>
+      </transition>
+    </div>
+    <script src="./static/js/socket.js"></script>
+    <script src="https://cdn.bootcss.com/vue/2.6.10/vue.js"></script>
+
+    <script>
+      new Vue({
+        el: "#chatapp",
+        data: {
+          chatlist: [],
+          user_id: "41266",
+          user_openid: "o2CMc5ImXAEUZsvDMWOx8EqOD8D0",
+          page: 1,
+          showcontainer: false,
+
+          clist: [
+            {
+              type: 0,
+              ctx: "123123123,",
+              avatar: "./static/images/noface.png"
+            },
+            {
+              type: 1,
+              ctx: "323232323",
+              avatar: "./static/images/noface.png"
+            }
+          ],
+          value: "",
+          nick: ""
+        },
+        created() {},
+        mounted() {
+          ws.reCon()
+            .then(res => {
+              this.getChatlist();
+              this.onMsgGet();
+            })
+            .catch(err => {
+              alert("远程服务故障,重连中...");
+            });
+        },
+        methods: {
+          onMsgGet() {
+            ws.onMsg(res => {
+              console.log(res);
+              if (res.cmd === "init_list") {
+                this.renderlist(res);
+              } else if (res.cmd === "send_letter") {
+                console.log("一对一", res);
+              }
+            });
+          },
+          getChatlist() {
+            ws.onSend({
+              cmd: "init_list",
+              data: {
+                uid: this.user_id,
+                token: this.user_openid,
+                p: this.page
+              }
+            });
+          },
+          renderlist(res) {
+            console.log(res);
+            this.chatlist.push(...res.data.rooms);
+          },
+          gotochat(rid, touid, nick) {
+            console.log(rid, touid, nick);
+            this.showcontainer = true;
+            this.rid = rid;
+            this.touid = touid;
+            this.nick = nick;
+          },
+
+          send() {
+            console.log(this.rid, this.touid);
+            var _t = this;
+            let sendval = this.value;
+
+            let enter_letter = {
+              cmd: "send_letter",
+              data: {
+                uid: this.user_id,
+                token: this.user_openid,
+                rid: this.rid,
+                touid: this.touid,
+                type: 0,
+                content: sendval
+              }
+            };
+
+            console.log("++++++++++", enter_letter);
+
+            ws.onSend(enter_letter);
+            _t.value = "";
+            _t.renderchat({
+              type: 1,
+              ctx: sendval,
+              avatar: "./static/images/noface.png"
+            });
+          },
+
+          renderchat(obj) {
+            this.clist.push(obj);
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
