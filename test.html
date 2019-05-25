@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ch_CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -14,27 +14,24 @@
         <div class="chat_container" v-if="showcontainer">
           <div class="chat_box">
             <div class="topbar">
-              <span @click="showcontainer=false">返回</span
-              ><span>{{ nick }}</span>
+              <span @click="showcontainer=false">返回</span><span>{{ nick }}</span>
             </div>
             <template v-for="(item, key) in clist">
               <div :class="!item.type?'chat_left':'chat_right'" :key="key">
                 <image
                   v-if="!item.type"
                   :src="item.avatar"
-                  class="avatar"
-                ></image>
+                  class="avatar"></image>
                 <div class="ctx">{{ item.ctx }}</div>
                 <image
                   v-if="item.type"
                   :src="item.avatar"
-                  class="avatar"
-                ></image>
+                  class="avatar"></image>
               </div>
             </template>
           </div>
-          <div class="chat_insert">
-            <input type="text" v-model="value" />
+          <div class="chat_insert" >
+            <input type="text" v-model="value" v-on:keyup.enter="send"/>
             <span class="sendchat" @click="send">发送</span>
           </div>
         </div>
@@ -45,8 +42,7 @@
             v-for="(i, index) in chatlist"
             :key="index"
             class="chat_list"
-            @click="gotochat(i.id, i.touid, i.nick)"
-          >
+            @click="gotochat(i.id, i.touid, i.nick)">
             <image :src="i.avatar" class="avatar"></image>
             <span class="name">{{ i.nick }}</span>
           </div>
@@ -83,28 +79,33 @@
         },
         created() {},
         mounted() {
-          ws.reCon()
-            .then(res => {
+
+          ws2.consoket({
+            cb: ()=>{
               this.getChatlist();
-              this.onMsgGet();
-            })
-            .catch(err => {
-              alert("远程服务故障,重连中...");
+             
+            },
+            msgcb: (res)=>{
+              this.onMsgGet(res);
+            }
+          }).catch(err => {
+              alert("远程服务故障");
             });
+
+            
         },
         methods: {
-          onMsgGet() {
-            ws.onMsg(res => {
+          onMsgGet(res) {
               console.log(res);
               if (res.cmd === "init_list") {
                 this.renderlist(res);
               } else if (res.cmd === "send_letter") {
                 console.log("一对一", res);
               }
-            });
+           
           },
-          getChatlist() {
-            ws.onSend({
+          getChatlist() {  //获取对话列表
+            ws2.send({
               cmd: "init_list",
               data: {
                 uid: this.user_id,
@@ -114,7 +115,6 @@
             });
           },
           renderlist(res) {
-            console.log(res);
             this.chatlist.push(...res.data.rooms);
           },
           gotochat(rid, touid, nick) {
@@ -144,7 +144,7 @@
 
             console.log("++++++++++", enter_letter);
 
-            ws.onSend(enter_letter);
+            ws2.send(enter_letter);
             _t.value = "";
             _t.renderchat({
               type: 1,
