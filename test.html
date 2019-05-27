@@ -12,26 +12,28 @@
     <div id="chatapp" v-cloak>
       <transition name="slide-fade">
         <div class="chat_container" v-if="showcontainer">
-          <div class="chat_box">
+          <div class="chat_box" ref="chat_box">
             <div class="topbar">
-              <span @click="showcontainer=false">返回</span><span>{{ nick }}</span>
+              <span @click="back()">返回</span><span>{{ nick }}</span>
             </div>
             <template v-for="(item, key) in clist">
               <div :class="!item.type?'chat_left':'chat_right'" :key="key">
                 <image
                   v-if="!item.type"
                   :src="item.avatar"
-                  class="avatar"></image>
+                  class="avatar"
+                ></image>
                 <div class="ctx">{{ item.ctx }}</div>
                 <image
                   v-if="item.type"
                   :src="item.avatar"
-                  class="avatar"></image>
+                  class="avatar"
+                ></image>
               </div>
             </template>
           </div>
-          <div class="chat_insert" >
-            <input type="text" v-model="value" v-on:keyup.enter="send"/>
+          <div class="chat_insert">
+            <input type="text" v-model="value" v-on:keyup.enter="send" />
             <span class="sendchat" @click="send">发送</span>
           </div>
         </div>
@@ -42,7 +44,8 @@
             v-for="(i, index) in chatlist"
             :key="index"
             class="chat_list"
-            @click="gotochat(i.id, i.touid, i.nick)">
+            @click="gotochat(i.id, i.touid == user_id ? i.uid : i.touid, i.nick, i.avatar)"
+          >
             <image :src="i.avatar" class="avatar"></image>
             <span class="name">{{ i.nick }}</span>
           </div>
@@ -53,6 +56,7 @@
     <script src="https://cdn.bootcss.com/vue/2.6.10/vue.js"></script>
 
     <script>
+      var ws = null;
       new Vue({
         el: "#chatapp",
         data: {
@@ -60,6 +64,8 @@
           user_id: "41266",
           user_openid: "o2CMc5ImXAEUZsvDMWOx8EqOD8D0",
           page: 1,
+          user_avatar: "./static/images/noface.png",
+          to_user_avatar: "",
           showcontainer: false,
 
           clist: [
@@ -75,58 +81,198 @@
             }
           ],
           value: "",
-          nick: ""
+          nick: "",
+          eachTopid: "",
+          onFetching: false
         },
         created() {},
         mounted() {
+          this.connect();
 
-          ws2.consoket({
-            cb: ()=>{
-              this.getChatlist();
-             
-            },
-            msgcb: (res)=>{
-              this.onMsgGet(res);
+          ws.socketOnErr(() => {
+            this.connect();
+          });
+          ws.socketOnClose(() => {
+            if (ws.socketobj) {
+              this.connect();
             }
-          }).catch(err => {
-              alert("远程服务故障");
-            });
-
-            
+          });
+          this.socketonmsg();
         },
+
         methods: {
-          onMsgGet(res) {
-              console.log(res);
-              if (res.cmd === "init_list") {
-                this.renderlist(res);
-              } else if (res.cmd === "send_letter") {
-                console.log("一对一", res);
+          socketonmsg() {
+            ws.socketOnMsg(res => {
+              console.log("接收", res);
+              switch (res.cmd) {
+                case "init_list": //初始列表
+                  this.renderlist(res);
+                  break;
+                case "create_room": //创建对话
+                  break;
+                case "enter_letter": //进入对话
+                  break;
+                case "no-read": //获取未读消息
+                  break;
+                case "history_letter": //历史消息
+                  var chatlist = [];
+                  res.data.forEach(item => {
+                    if (item.uid === this.user_id) {
+                      chatlist.push({
+                        type: 1,
+                        ctx: item.content,
+                        avatar: this.user_avatar,
+                        id: item.id
+                      });
+                    } else {
+                      chatlist.push({
+                        type: 0,
+                        ctx: item.content,
+                        avatar: this.to_user_avatar,
+                        id: item.id
+                      });
+                    }
+                  });
+                  let usedchatlist = JSON.parse(JSON.stringify(this.clist));
+                  usedchatlist.unshift(...chatlist);
+                  this.clist = usedchatlist;
+                  this.eachTopid =
+                    this.clist.length > 0 ? this.clist[0].id : "";
+                  setTimeout(() => {
+                    this.scrollbottom();
+                  }, 0);
+
+                  break;
+                case "send_letter": //发送消息
+                  if (res.data === "发送成功") {
+                    this.renderchat({
+                      type: 1,
+                      ctx: this.value,
+                      avatar: this.user_avatar
+                    });
+                    this.value = "";
+
+                    setTimeout(() => {
+                      this.scrollbottom();
+                    }, 0);
+                  }
+                  break;
+                case "recv_letter": //接收消息
+                  if (res.data.touid != this.touid) {
+                    this.renderchat({
+                      type: 0,
+                      ctx: res.data.content,
+                      avatar: this.to_user_avatar
+                    });
+                  }
+
+                  setTimeout(() => {
+                    this.scrollbottom();
+                  }, 0);
+                  break;
+                case "leave_letter": //离开对话
+                  break;
               }
-           
+            });
           },
-          getChatlist() {  //获取对话列表
-            ws2.send({
+          connect() {
+            this.chatlist = [];
+            this.page = 1;
+            this.clist = [];
+            (this.eachTopid = ""), (this.scrollhandle = false);
+            ws = Ws.getinstance();
+            ws.consocket().then(res => {
+              this.initlist();
+            });
+          },
+          initlist() {
+            //获取对话列表
+            let data = {
               cmd: "init_list",
               data: {
                 uid: this.user_id,
                 token: this.user_openid,
                 p: this.page
               }
-            });
+            };
+            ws.sendmsg(data);
           },
           renderlist(res) {
+            //渲染列表
             this.chatlist.push(...res.data.rooms);
           },
-          gotochat(rid, touid, nick) {
-            console.log(rid, touid, nick);
+          gotochat(rid, touid, nick, avatar) {
+            console.log(rid, touid, nick, avatar);
             this.showcontainer = true;
             this.rid = rid;
             this.touid = touid;
             this.nick = nick;
-          },
+            this.to_user_avatar = avatar;
 
+            this.clist = [];
+            this.eachTopid = "";
+            //this.createroom();
+            this.getroom();
+            this.history();
+            setTimeout(() => {
+              if (this.showcontainer) {
+                document.body.addEventListener("scroll", this.scrollLoad);
+              }
+            }, 1000);
+          },
+          // createroom() {
+          //   //创建房间
+          //   let create_room = {
+          //     cmd: "create_room",
+          //     data: {
+          //       uid: this.user_id,
+          //       token: this.user_openid,
+          //       touid: this.touid
+          //     }
+          //   };
+          //   ws.sendmsg(create_room);
+          // },
+          getroom() {
+            //进入房间
+            let enter_letter = {
+              cmd: "enter_letter",
+              data: {
+                uid: this.user_id,
+                token: this.user_openid,
+                touid: this.touid,
+                rid: this.rid
+              }
+            };
+            ws.sendmsg(enter_letter);
+          },
+          outroom() {
+            //退出房间
+            let leave_letter = {
+              cmd: "leave_letter",
+              data: {
+                uid: this.user_id,
+                token: this.user_openid,
+                rid: this.rid
+              }
+            };
+            ws.sendmsg(leave_letter);
+          },
+          history() {
+            //历史记录
+
+            let history_letter = {
+              cmd: "history_letter",
+              data: {
+                uid: this.user_id,
+                token: this.user_openid,
+                rid: this.rid,
+                touid: this.touid,
+                last_id: this.eachTopid || 10000 * 10000
+              }
+            };
+            ws.sendmsg(history_letter);
+          },
           send() {
-            console.log(this.rid, this.touid);
             var _t = this;
             let sendval = this.value;
 
@@ -141,20 +287,32 @@
                 content: sendval
               }
             };
-
-            console.log("++++++++++", enter_letter);
-
-            ws2.send(enter_letter);
-            _t.value = "";
-            _t.renderchat({
-              type: 1,
-              ctx: sendval,
-              avatar: "./static/images/noface.png"
-            });
+            ws.sendmsg(enter_letter);
           },
 
           renderchat(obj) {
             this.clist.push(obj);
+          },
+
+          back() {
+            this.showcontainer = false;
+            this.outroom();
+          },
+          scrollLoad() {
+            let scrollHeight = document.querySelector("#chatapp").scrollHeight;
+            let nowScotop =
+              document.documentElement.clientHeight ||
+              document.body.clientHeight; //可视区高度
+            let wheight =
+              document.documentElement.scrollTop || document.body.scrollTop; //已滚动高度
+            if (wheight === 0) {
+              console.log("___________");
+            }
+          },
+          scrollbottom() {
+            document.querySelector("body").scrollTop = document.querySelector(
+              "#chatapp"
+            ).scrollHeight;
           }
         }
       });
